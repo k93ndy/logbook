@@ -1,0 +1,6 @@
+target:
+  namespace: ""
+log:
+  format: "json"
+  out: "stderr"
+  level: "info"
