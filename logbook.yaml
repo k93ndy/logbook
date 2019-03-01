@@ -1,6 +1,9 @@
+auth:
+  mode: "out-of-cluster"
+  kubeconfig: ""
 target:
   namespace: ""
 log:
   format: "json"
   out: "stderr"
-  level: "info"
+  level: "debug"
