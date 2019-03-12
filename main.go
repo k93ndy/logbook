@@ -5,12 +5,14 @@ import (
     "os"
     "path/filepath"
     "encoding/json"
+    //"reflect"
 
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/apimachinery/pkg/watch"
     "k8s.io/client-go/kubernetes"
     "k8s.io/client-go/tools/clientcmd"
     "k8s.io/client-go/rest"
 
+    "github.com/pkg/errors"
     log "github.com/sirupsen/logrus"
     "github.com/spf13/viper"
 
@@ -18,11 +20,13 @@ import (
     "github.com/k93ndy/logbook/config"
 )
 
-func initConfig() config.Config {
+func initConfig() (*config.Config, error) {
     //default values
     viper.SetDefault("target.namespace", "")
+    viper.SetDefault("target.listoptions.timeoutseconds", "0")
     viper.SetDefault("log.format", "json")
     viper.SetDefault("log.out", "stdout")
+    viper.SetDefault("log.filename", "k8s-events.log")
     viper.SetDefault("log.level", "info")
     viper.SetDefault("auth.mode", "in-cluster")
  
@@ -45,16 +49,18 @@ func initConfig() config.Config {
 
     var cfg config.Config
     if err := viper.Unmarshal(&cfg); err != nil {
-        log.Errorf("unable to decode into struct, %v\n", err)
+        return nil, errors.Wrap(err, "Error occured during unmarshal config")
     }
     
     log.Infof("Initialized with configuration: %+v\n", cfg)
+    //log.Infof("Address: %v, TimeoutSeconds: %v, Type: %v\n", 
+    //    cfg.Target.ListOptions.TimeoutSeconds, *cfg.Target.ListOptions.TimeoutSeconds, reflect.TypeOf(cfg.Target.ListOptions.TimeoutSeconds))
 
-    return cfg
+    return &cfg, nil
 
 }
 
-func initLogrus(logCfg *config.LogConfig) {
+func initLogrus(logCfg *config.LogConfig) error {
     switch logCfg.Format {
     case "json":
         log.SetFormatter(&log.JSONFormatter{})
@@ -70,6 +76,13 @@ func initLogrus(logCfg *config.LogConfig) {
         log.SetOutput(os.Stdout)
     case "stderr":
         log.SetOutput(os.Stderr)
+    case "file":
+        file, err := os.Create(logCfg.Filename)
+        if err != nil {
+            return errors.Wrap(err, "Error occured during open log file")
+        }
+        //defer file.Close()
+        log.SetOutput(file)
     default:
         log.Errorf("log.out \"%v\" not supported, defaults to stdout.", logCfg.Out)
         log.SetOutput(os.Stdout)
@@ -94,6 +107,8 @@ func initLogrus(logCfg *config.LogConfig) {
         log.Errorf("log.level \"%v\" not supported, defaults to info.", logCfg.Level)
         log.SetLevel(log.InfoLevel)
     }
+
+    return nil
 }
 
 func createClientset(authCfg *config.AuthConfig) (*kubernetes.Clientset, error){
@@ -105,12 +120,12 @@ func createClientset(authCfg *config.AuthConfig) (*kubernetes.Clientset, error){
         log.Infoln("Running under in-cluster mode.")
         config, err = rest.InClusterConfig()
         if err != nil {
-            panic(err.Error())
+            return nil, errors.Wrap(err, "Error occured during start as in-cluster mode")
         }
     case "out-of-cluster":
         log.Infoln("Running under out-of-cluster mode.")
         if authCfg.KubeConfig == "" {
-            log.Infoln("kubeconfig not specified. Will use kubeconfig file in default path.")
+            log.Infoln("kubeconfig not provided. Will use kubeconfig file in default path.")
             if home := homeDir(); home != "" {
                 authCfg.KubeConfig = filepath.Join(home, ".kube", "config")
             }
@@ -130,27 +145,37 @@ func createClientset(authCfg *config.AuthConfig) (*kubernetes.Clientset, error){
 
 func main() {
     log.SetFormatter(&log.JSONFormatter{})
-    cfg := initConfig()
+    cfg, err := initConfig()
+    if err != nil {
+        panic(err.Error())
+    }
     initLogrus(&cfg.Log)
     clientset, err := createClientset(&cfg.Auth)
     if err != nil {
         panic(err.Error())
     }
 
-    eventWatchInterface, err := clientset.Events().Events(cfg.Target.Namespace).Watch(metav1.ListOptions{})
+    eventWatcher, err := clientset.CoreV1().Events(cfg.Target.Namespace).Watch(cfg.Target.ListOptions)
     if err != nil {
         panic(err.Error())
     }
-    log.Infoln("Watch interface created successfully. Kubernetes events will be logged from now on.")
+    log.Infoln("Watcher was successfully created. Kubernetes events will be logged from now on.")
     for {
         select {
-        case newEvent := <-eventWatchInterface.ResultChan():
-             //marshalledEvent, err := json.MarshalIndent(newEvent, "", "    ")
-             marshalledEvent, err := json.Marshal(newEvent)
-             if err != nil {
-                 panic(err.Error())
-             }
-             log.Infof("%s\n", string(marshalledEvent))
+        case event, ok := <-eventWatcher.ResultChan():
+            if !ok {
+                log.Warnln("Watcher timed out.")
+                os.Exit(0)
+            }
+            switch event.Type {
+            case watch.Modified, watch.Added, watch.Error:
+                //marshalledEvent, err := json.MarshalIndent(event, "", "    ")
+                marshalledEvent, err := json.Marshal(event)
+                if err != nil {
+                    panic(err.Error())
+                }
+                log.Infof("%s\n", string(marshalledEvent))
+            }
         }
     }
 

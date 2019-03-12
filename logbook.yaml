@@ -3,6 +3,7 @@ auth:
   kubeconfig: ""
 target:
   namespace: ""
+  type: "event"
 log:
   format: "json"
   out: "stderr"

@@ -19,4 +19,8 @@
 /vendor/
 /Godeps/
 
+
+### log files ###
+.log
+
 # End of https://www.gitignore.io/api/go
