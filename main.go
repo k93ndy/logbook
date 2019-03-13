@@ -3,6 +3,8 @@ package main
 import (
     //"flag"
     "os"
+    "os/signal"
+    "syscall"
     "path/filepath"
     "encoding/json"
     //"reflect"
@@ -52,15 +54,12 @@ func initConfig() (*config.Config, error) {
         return nil, errors.Wrap(err, "Error occured during unmarshal config")
     }
     
-    log.Infof("Initialized with configuration: %+v\n", cfg)
-    //log.Infof("Address: %v, TimeoutSeconds: %v, Type: %v\n", 
-    //    cfg.Target.ListOptions.TimeoutSeconds, *cfg.Target.ListOptions.TimeoutSeconds, reflect.TypeOf(cfg.Target.ListOptions.TimeoutSeconds))
-
     return &cfg, nil
 
 }
 
-func initLogrus(logCfg *config.LogConfig) error {
+func initLogrus(logCfg *config.LogConfig) (*os.File, error) {
+    var file *os.File
     switch logCfg.Format {
     case "json":
         log.SetFormatter(&log.JSONFormatter{})
@@ -77,11 +76,11 @@ func initLogrus(logCfg *config.LogConfig) error {
     case "stderr":
         log.SetOutput(os.Stderr)
     case "file":
-        file, err := os.Create(logCfg.Filename)
+        // file, err := os.Create(logCfg.Filename)
+        file, err := os.OpenFile(logCfg.Filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
         if err != nil {
-            return errors.Wrap(err, "Error occured during open log file")
+            return nil, errors.Wrap(err, "Error occured during open log file")
         }
-        //defer file.Close()
         log.SetOutput(file)
     default:
         log.Errorf("log.out \"%v\" not supported, defaults to stdout.", logCfg.Out)
@@ -108,7 +107,7 @@ func initLogrus(logCfg *config.LogConfig) error {
         log.SetLevel(log.InfoLevel)
     }
 
-    return nil
+    return file, nil
 }
 
 func createClientset(authCfg *config.AuthConfig) (*kubernetes.Clientset, error){
@@ -117,13 +116,13 @@ func createClientset(authCfg *config.AuthConfig) (*kubernetes.Clientset, error){
 
     switch authCfg.Mode {
     case "in-cluster":
-        log.Infoln("Running under in-cluster mode.")
+        log.Infoln("Logbook will start in in-cluster mode.")
         config, err = rest.InClusterConfig()
         if err != nil {
             return nil, errors.Wrap(err, "Error occured during start as in-cluster mode")
         }
     case "out-of-cluster":
-        log.Infoln("Running under out-of-cluster mode.")
+        log.Infoln("Logbook will start in out-of-cluster mode.")
         if authCfg.KubeConfig == "" {
             log.Infoln("kubeconfig not provided. Will use kubeconfig file in default path.")
             if home := homeDir(); home != "" {
@@ -143,13 +142,55 @@ func createClientset(authCfg *config.AuthConfig) (*kubernetes.Clientset, error){
     return kubernetes.NewForConfig(config)
 }
 
+func signalHandler(sigChan chan os.Signal) {
+    for {
+        select {
+        case sig := <-sigChan:
+            switch sig {
+            case syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
+                log.Infof("Signal %v received. Logbook will shutdown.", sig)
+                os.Exit(0)
+            }
+        }
+    }
+}
+
 func main() {
+    // register signal handler
+    sigChan := make(chan os.Signal, 1)
+    signal.Ignore()
+    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+    go signalHandler(sigChan)
+
     log.SetFormatter(&log.JSONFormatter{})
     cfg, err := initConfig()
     if err != nil {
         panic(err.Error())
     }
-    initLogrus(&cfg.Log)
+    log.Infof("Initialized with configuration: %+v\n", cfg)
+
+    logFile, err := initLogrus(&cfg.Log)
+    if err != nil {
+        panic(err.Error())
+    }
+    go func () {
+        for {
+            select {
+            case sig := <-sigChan:
+                switch sig {
+                case syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
+                    if logFile != nil {
+                        logFile.Sync()
+                        logFile.Close()
+                        log.Infoln("Log flushed.")
+                    }
+                    log.Infof("Signal %v received. Logbook will shutdown.", sig)
+                    os.Exit(0)
+                }
+            }
+        }
+    }()
+
     clientset, err := createClientset(&cfg.Auth)
     if err != nil {
         panic(err.Error())
@@ -178,7 +219,6 @@ func main() {
             }
         }
     }
-
 }
 
 func homeDir() string {
