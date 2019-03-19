@@ -76,12 +76,12 @@ func initLogrus(logCfg *config.LogConfig) (*os.File, error) {
     case "stderr":
         log.SetOutput(os.Stderr)
     case "file":
-        // file, err := os.Create(logCfg.Filename)
-        file, err := os.OpenFile(logCfg.Filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+        f, err := os.OpenFile(logCfg.Filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
         if err != nil {
             return nil, errors.Wrap(err, "Error occured during open log file")
         }
-        log.SetOutput(file)
+        log.SetOutput(f)
+        file = f
     default:
         log.Errorf("log.out \"%v\" not supported, defaults to stdout.", logCfg.Out)
         log.SetOutput(os.Stdout)
@@ -142,26 +142,13 @@ func createClientset(authCfg *config.AuthConfig) (*kubernetes.Clientset, error){
     return kubernetes.NewForConfig(config)
 }
 
-func signalHandler(sigChan chan os.Signal) {
-    for {
-        select {
-        case sig := <-sigChan:
-            switch sig {
-            case syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
-                log.Infof("Signal %v received. Logbook will shutdown.", sig)
-                os.Exit(0)
-            }
-        }
-    }
-}
-
 func main() {
-    // register signal handler
+    // handle signals
     sigChan := make(chan os.Signal, 1)
     signal.Ignore()
     signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-    go signalHandler(sigChan)
 
+    // initiate configuration
     log.SetFormatter(&log.JSONFormatter{})
     cfg, err := initConfig()
     if err != nil {
@@ -169,27 +156,35 @@ func main() {
     }
     log.Infof("Initialized with configuration: %+v\n", cfg)
 
+    // initiate logging
     logFile, err := initLogrus(&cfg.Log)
     if err != nil {
         panic(err.Error())
     }
-    go func () {
+
+    go func (logFile *os.File) {
+        log.Infoln(logFile)
         for {
             select {
             case sig := <-sigChan:
                 switch sig {
                 case syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
+                    log.Infof("Signal %v received.", sig)
                     if logFile != nil {
-                        logFile.Sync()
-                        logFile.Close()
+                        if err := logFile.Sync(); err != nil {
+                            log.Errorln(err)
+                        }
+                        if err := logFile.Close(); err != nil {
+                            log.Errorln(err)
+                        }
                         log.Infoln("Log flushed.")
                     }
-                    log.Infof("Signal %v received. Logbook will shutdown.", sig)
+                    log.Infoln("Logbook will be shutdown.")
                     os.Exit(0)
                 }
             }
         }
-    }()
+    }(logFile)
 
     clientset, err := createClientset(&cfg.Auth)
     if err != nil {
