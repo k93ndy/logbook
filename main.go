@@ -8,6 +8,7 @@ import (
     "path/filepath"
     "encoding/json"
     //"reflect"
+    "fmt"
 
     "k8s.io/apimachinery/pkg/watch"
     "k8s.io/client-go/kubernetes"
@@ -143,7 +144,7 @@ func createClientset(authCfg *config.AuthConfig) (*kubernetes.Clientset, error){
 }
 
 func main() {
-    // handle signals
+    // register signals
     sigChan := make(chan os.Signal, 1)
     signal.Ignore()
     signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
@@ -161,7 +162,8 @@ func main() {
     if err != nil {
         panic(err.Error())
     }
-
+    
+    // handle signals
     go func (logFile *os.File) {
         log.Infoln(logFile)
         for {
@@ -169,28 +171,29 @@ func main() {
             case sig := <-sigChan:
                 switch sig {
                 case syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
-                    log.Infof("Signal %v received.", sig)
+                    log.Infof("Signal %v received. Logbook will be shutdown.", sig)
                     if logFile != nil {
-                        if err := logFile.Sync(); err != nil {
-                            log.Errorln(err)
-                        }
+                        //if err := logFile.Sync(); err != nil {
+                        //    log.Infoln(err)
+                        //}
                         if err := logFile.Close(); err != nil {
-                            log.Errorln(err)
+                            fmt.Println(err)
                         }
-                        log.Infoln("Log flushed.")
+                        fmt.Println("Log flushed.")
                     }
-                    log.Infoln("Logbook will be shutdown.")
                     os.Exit(0)
                 }
             }
         }
     }(logFile)
 
+    // create clientset
     clientset, err := createClientset(&cfg.Auth)
     if err != nil {
         panic(err.Error())
     }
 
+    // create watch interface
     eventWatcher, err := clientset.CoreV1().Events(cfg.Target.Namespace).Watch(cfg.Target.ListOptions)
     if err != nil {
         panic(err.Error())
