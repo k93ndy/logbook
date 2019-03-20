@@ -63,6 +63,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfg.Log.Format, "log-format", "", "log format (default is json)")
 	rootCmd.PersistentFlags().StringVar(&cfg.Log.Out, "log-out", "", "log output (default is stdout)")
 	rootCmd.PersistentFlags().StringVar(&cfg.Log.Level, "log-level", "", "log level (default is info)")
+	rootCmd.PersistentFlags().StringVar(&cfg.Log.Filename, "log-filename", "", "full path of log file with filename (valid only when log-out is set to file. default is k8s-events.log in the same directory with logbook)")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
@@ -77,6 +78,7 @@ func init() {
     viper.BindPFlag("log.format", rootCmd.PersistentFlags().Lookup("log-format"))
     viper.BindPFlag("log.out", rootCmd.PersistentFlags().Lookup("log-out"))
     viper.BindPFlag("log.level", rootCmd.PersistentFlags().Lookup("log-level"))
+    viper.BindPFlag("log.filename", rootCmd.PersistentFlags().Lookup("log-filename"))
 }
 
 // initConfig reads in config file and ENV variables if set.

@@ -34,7 +34,10 @@ func initConfig() (*config.Config, error) {
     viper.SetDefault("auth.mode", "in-cluster")
  
     // cooperate with cobra, command flags have a higher priority
-    cmd.Execute()
+    if err := cmd.Execute(); err != nil {
+        fmt.Println(err)
+        os.Exit(1)
+    }
 
     //load configurations from file
     if viper.Get("config") != nil {
@@ -136,10 +139,10 @@ func createClientset(authCfg *config.AuthConfig) (*kubernetes.Clientset, error){
             panic(err.Error())
         }
     default:
-        log.Panicf("auth.mode \"%v\" not supported. Logbook will be terminated.\n", authCfg.Mode)
+        err := fmt.Errorf("auth.mode \"%v\" not supported. Logbook will be terminated.\n", authCfg.Mode)
+        return nil, errors.Wrap(err, "Error occured during creating clientset")
     }
 
-    // create clientset
     return kubernetes.NewForConfig(config)
 }
 
@@ -173,9 +176,9 @@ func main() {
                 case syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
                     log.Infof("Signal %v received. Logbook will be shutdown.", sig)
                     if logFile != nil {
-                        //if err := logFile.Sync(); err != nil {
-                        //    log.Infoln(err)
-                        //}
+                        if err := logFile.Sync(); err != nil {
+                            fmt.Println(err)
+                        }
                         if err := logFile.Close(); err != nil {
                             fmt.Println(err)
                         }
