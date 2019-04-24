@@ -51,18 +51,6 @@ and out-of-cluster(use kubeconfig file for auth).`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
     Run: func(cmd *cobra.Command, args []string) {
-        //init viper
-        if err := viper.Unmarshal(&cfg); err != nil {
-            log.Panicln(errors.Wrap(err, "Error occured during unmarshal config"))
-        }
-        log.Infof("Initialized with configuration: %+v\n", cfg)
-
-        var err error
-        logFile, err = initLogrus(&cfg.Log)
-        if err != nil {
-            panic(err.Error())
-        }
-
         // register signals
         sigChan := make(chan os.Signal, 1)
         signal.Ignore()
@@ -170,7 +158,8 @@ func initConfig() {
 
     // default values
     viper.SetDefault("target.namespace", "")
-    viper.SetDefault("target.listoptions.timeoutseconds", "0")
+    timeoutSeconds := int64(86400*365*5)
+    viper.SetDefault("target.listoptions.timeoutseconds", &timeoutSeconds)
     viper.SetDefault("log.format", "json")
     viper.SetDefault("log.out", "stdout")
     viper.SetDefault("log.filename", "k8s-events.log")
@@ -191,6 +180,17 @@ func initConfig() {
 		log.Infoln("Using config file:", viper.ConfigFileUsed())
 	} else {
         log.Infoln(err.Error())
+    }
+
+    if err := viper.Unmarshal(&cfg); err != nil {
+        log.Panicln(errors.Wrap(err, "Error occured during unmarshal config"))
+    }
+    log.Infof("Initialized with configuration: %+v\n", cfg)
+
+    //init logrus
+    var err error
+    if logFile, err = initLogrus(&cfg.Log); err !=nil {
+        panic(err.Error())
     }
 }
 
