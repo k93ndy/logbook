@@ -1,10 +1,10 @@
 package main
 
 import (
-    "github.com/k93ndy/logbook/cmd"
+	"github.com/k93ndy/logbook/cmd"
 )
 
 func main() {
-    // cooperate with cobra, command flags have a higher priority
-    cmd.Execute()
+	// cooperate with cobra, command flags have a higher priority
+	cmd.Execute()
 }

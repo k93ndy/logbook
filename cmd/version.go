@@ -16,7 +16,7 @@ package cmd
 
 import (
 	"fmt"
-    "os"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -25,10 +25,10 @@ import (
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information for logbook.",
-	Long: `Print version information for logbook.`,
+	Long:  `Print version information for logbook.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("version called")
-        os.Exit(0)
+		os.Exit(0)
 	},
 }
 
