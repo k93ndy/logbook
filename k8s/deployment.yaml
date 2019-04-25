@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: logbook
+  name: logbook
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logbook
+  template:
+    metadata:
+      labels:
+        app: logbook
+    spec:
+      containers:
+      - image: 2nak6f/logbook:0.0.1.0-alpha
+        imagePullPolicy: Always
+        name: logbook
+      restartPolicy: Always
+      serviceAccountName: logbook
